@@ -1,0 +1,239 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Noise Spectrum Visualizer</title>
+    <!-- Importamos Chart.js desde CDN -->
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        :root {
+            --primary-color: #0056D2; /* Coursera Blue */
+            --bg-color: #F5F7FA;
+            --text-main: #1F2432;
+            --text-muted: #636D7A;
+            --card-bg: #FFFFFF;
+        }
+
+        body {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            background-color: var(--bg-color);
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            height: 100vh;
+            margin: 0;
+            padding: 20px;
+            box-sizing: border-box;
+        }
+
+        .visualizer-container {
+            background-color: var(--card-bg);
+            width: 100%;
+            max-width: 700px;
+            padding: 30px;
+            border-radius: 12px;
+            box-shadow: 0 10px 25px rgba(0,0,0,0.08);
+            border: 1px solid #E5E7EB;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+        }
+
+        h2 {
+            margin-top: 0;
+            color: var(--text-main);
+            font-size: 24px;
+            margin-bottom: 20px;
+            text-align: center;
+        }
+
+        .controls {
+            display: flex;
+            gap: 12px;
+            margin-bottom: 24px;
+            flex-wrap: wrap;
+            justify-content: center;
+        }
+
+        button {
+            background-color: var(--card-bg);
+            border: 2px solid #D1D7E0;
+            color: var(--text-main);
+            padding: 10px 20px;
+            font-size: 14px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            transition: all 0.2s ease;
+        }
+
+        button:hover {
+            border-color: var(--primary-color);
+            color: var(--primary-color);
+        }
+
+        button[aria-pressed="true"] {
+            background-color: var(--primary-color);
+            color: white;
+            border-color: var(--primary-color);
+            box-shadow: 0 4px 10px rgba(0, 86, 210, 0.3);
+        }
+
+        button:focus-visible {
+            outline: 3px solid #FFC107;
+            outline-offset: 2px;
+        }
+
+        .chart-container {
+            width: 100%;
+            height: 300px;
+            position: relative;
+        }
+
+        .description {
+            margin-top: 24px;
+            padding: 15px;
+            background-color: #F8FAFC;
+            border-left: 4px solid var(--primary-color);
+            border-radius: 0 8px 8px 0;
+            color: var(--text-muted);
+            font-size: 15px;
+            line-height: 1.5;
+            width: 100%;
+            box-sizing: border-box;
+        }
+
+        /* Oculto visualmente pero disponible para lectores de pantalla */
+        .sr-only {
+            position: absolute;
+            width: 1px;
+            height: 1px;
+            padding: 0;
+            margin: -1px;
+            overflow: hidden;
+            clip: rect(0, 0, 0, 0);
+            white-space: nowrap;
+            border-width: 0;
+        }
+    </style>
+</head>
+<body>
+
+<div class="visualizer-container">
+    <h2>Noise Frequency Spectrum</h2>
+    
+    <div class="controls" role="group" aria-label="Select noise type">
+        <button id="btn-white" aria-pressed="true" onclick="setNoiseType('white')">White Noise</button>
+        <button id="btn-pink" aria-pressed="false" onclick="setNoiseType('pink')">Pink Noise</button>
+        <button id="btn-brown" aria-pressed="false" onclick="setNoiseType('brown')">Brown Noise</button>
+    </div>
+
+    <div class="chart-container" aria-hidden="true">
+        <!-- El canvas para Chart.js. aria-hidden true porque describiremos los datos en el texto -->
+        <canvas id="noiseChart"></canvas>
+    </div>
+
+    <!-- Región Viva para Accesibilidad y explicación visual -->
+    <div id="liveDescription" class="description" aria-live="polite">
+        <strong>White Noise:</strong> Contains equal energy per Hertz. The spectrum is a perfectly flat line at 0 dB, resulting in a bright, static-like sound.
+    </div>
+</div>
+
+<script>
+    // Datos: El eje X representa octavas (duplicando la frecuencia).
+    const labels = ['20', '40', '80', '160', '320', '640', '1.2k', '2.5k', '5k', '10k', '20k'];
+    
+    // Perfiles matemáticos de los ruidos en decibelios (dB)
+    const dataProfiles = {
+        white: {
+            label: 'White Noise',
+            data: [0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+            color: '#94A3B8', // Gris
+            desc: "<strong>White Noise:</strong> Contains equal energy per Hertz. The spectrum is a perfectly flat line at 0 dB, resulting in a bright, static-like sound."
+        },
+        pink: {
+            label: 'Pink Noise',
+            data: [0, -3, -6, -9, -12, -15, -18, -21, -24, -27, -30],
+            color: '#EC4899', // Rosa
+            desc: "<strong>Pink Noise:</strong> Loses 3 dB of energy per octave. The slope drops gently, producing a balanced, natural sound similar to rainfall or wind."
+        },
+        brown: {
+            label: 'Brown Noise',
+            data: [0, -6, -12, -18, -24, -30, -36, -42, -48, -54, -60],
+            color: '#8B5CF6', // Púrpura oscuro / Marrón estilizado
+            desc: "<strong>Brown Noise:</strong> Loses 6 dB of energy per octave. The steep downward slope heavily reduces high frequencies, creating a dark, rumbling sound like distant thunder."
+        }
+    };
+
+    // Configuración inicial de Chart.js
+    const ctx = document.getElementById('noiseChart').getContext('2d');
+    let noiseChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: labels,
+            datasets: [{
+                label: 'Amplitude (dB)',
+                data: dataProfiles['white'].data,
+                borderColor: dataProfiles['white'].color,
+                backgroundColor: dataProfiles['white'].color + '33', // Añade transparencia para el área
+                borderWidth: 3,
+                fill: true,
+                tension: 0.1,
+                pointRadius: 4,
+                pointHoverRadius: 6
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: false },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return context.parsed.y + ' dB';
+                        }
+                    }
+                }
+            },
+            scales: {
+                x: {
+                    title: { display: true, text: 'Frequency (Hz - Octaves)' },
+                    grid: { color: '#E2E8F0' }
+                },
+                y: {
+                    title: { display: true, text: 'Amplitude (dB)' },
+                    min: -60,
+                    max: 10,
+                    grid: { color: '#E2E8F0' }
+                }
+            },
+            animation: {
+                duration: 600, // Transición suave entre ruidos
+                easing: 'easeInOutQuart'
+            }
+        }
+    });
+
+    // Función para cambiar el tipo de ruido
+    function setNoiseType(type) {
+        // 1. Actualizar estado de los botones (Accesibilidad y Visual)
+        document.getElementById('btn-white').setAttribute('aria-pressed', type === 'white');
+        document.getElementById('btn-pink').setAttribute('aria-pressed', type === 'pink');
+        document.getElementById('btn-brown').setAttribute('aria-pressed', type === 'brown');
+
+        // 2. Actualizar los datos y color de la gráfica
+        const profile = dataProfiles[type];
+        noiseChart.data.datasets[0].data = profile.data;
+        noiseChart.data.datasets[0].borderColor = profile.color;
+        noiseChart.data.datasets[0].backgroundColor = profile.color + '33';
+        noiseChart.update();
+
+        // 3. Actualizar la región viva (Descripción y Lector de pantallas)
+        document.getElementById('liveDescription').innerHTML = profile.desc;
+    }
+</script>
+
+</body>
+</html>
